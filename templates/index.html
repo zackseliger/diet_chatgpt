@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diet Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-8">
+    <div class="max-w-6xl mx-auto space-y-8">
+        <!-- Header -->
+        <header class="text-center">
+            <h1 class="text-4xl font-bold text-gray-800">Diet Dashboard</h1>
+            <p class="text-gray-600 mt-2">Analysis of daily nutrition intake</p>
+        </header>
+
+        <!-- Graph Section -->
+        <div class="bg-white p-6 rounded-lg shadow-lg">
+            <h2 class="text-2xl font-semibold mb-4 text-gray-700">Daily Caloric Breakdown</h2>
+            <div class="relative h-96 w-full">
+                <canvas id="caloriesChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Interactive Section -->
+        <div class="bg-white p-6 rounded-lg shadow-lg min-h-[500px]">
+            <!-- Tabs -->
+            <div class="flex border-b border-gray-200 mb-6">
+                <button onclick="switchTab('chat')" id="tab-chat" class="flex-1 py-4 px-6 text-center font-medium text-blue-600 border-b-2 border-blue-600 hover:text-blue-800 focus:outline-none">
+                    AI Analysis (Chat)
+                </button>
+                <button onclick="switchTab('sql')" id="tab-sql" class="flex-1 py-4 px-6 text-center font-medium text-gray-500 hover:text-gray-700 focus:outline-none">
+                    Manual SQL
+                </button>
+            </div>
+
+            <!-- Chat Tab Content -->
+            <div id="content-chat" class="space-y-4">
+                <div class="bg-blue-50 p-4 rounded-md text-sm text-blue-800 mb-4">
+                    <p>Ask natural language questions about your diet data. Uses GPT-4o with structured output schema.</p>
+                    <p class="font-mono mt-1 text-xs">Example: "Show me the top 5 days with highest protein intake"</p>
+                </div>
+                
+                <div class="flex gap-4">
+                    <input type="text" id="chat-input" placeholder="Ask about your diet..." class="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm" onkeypress="handleEnter(event, 'chat')">
+                    <button onclick="sendChat()" class="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 font-medium transition-colors">
+                        Ask AI
+                    </button>
+                </div>
+
+                <div id="chat-loading" class="hidden text-center py-4">
+                    <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+
+                <div id="chat-result" class="hidden">
+                    <div class="bg-gray-50 p-4 rounded border border-gray-200 mb-4">
+                        <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Generated SQL</span>
+                        <pre id="chat-sql-output" class="mt-2 text-sm text-gray-700 overflow-x-auto whitespace-pre-wrap font-mono"></pre>
+                    </div>
+                    <div class="bg-white border rounded overflow-hidden">
+                         <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200" id="chat-table">
+                                <!-- Data populated by JS -->
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SQL Tab Content -->
+            <div id="content-sql" class="space-y-4 hidden">
+                <div class="bg-gray-50 p-4 rounded-md text-sm text-gray-700 mb-4">
+                    <p>Execute raw SQL queries against the 'servings_apr_25' table.</p>
+                    <p class="font-mono mt-1 text-xs">Schema includes: day, food_name, amount, energy_kcal, carbs_g, fat_g, protein_g...</p>
+                </div>
+
+                <textarea id="sql-input" rows="5" class="w-full p-3 border border-gray-300 rounded-lg font-mono text-sm focus:ring-2 focus:ring-gray-500 focus:border-gray-500 shadow-sm" placeholder="SELECT * FROM servings_apr_25 LIMIT 10"></textarea>
+                
+                <div class="flex justify-end">
+                    <button onclick="runSQL()" class="bg-gray-700 text-white px-6 py-3 rounded-lg hover:bg-gray-800 font-medium transition-colors">
+                        Run Query
+                    </button>
+                </div>
+
+                <div id="sql-loading" class="hidden text-center py-4">
+                    <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-700"></div>
+                </div>
+
+                <div id="sql-result" class="hidden bg-white border rounded overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200" id="sql-table">
+                            <!-- Data populated by JS -->
+                        </table>
+                    </div>
+                </div>
+                 <div id="sql-error" class="hidden p-4 text-red-600 bg-red-50 rounded border border-red-200"></div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Init
+        document.addEventListener('DOMContentLoaded', loadStats);
+
+        // Fetch and Render Chart
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const data = await response.json();
+                
+                if (data.data) {
+                    renderChart(data.data, data.meta);
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        function renderChart(rows, meta) {
+            // Tinybird JSON format usually: { meta: [...], data: [{key: val}, ...] } or data: [[val, val]] depending on format.
+            // Using query_tinybird implementation which appends FORMAT JSON.
+            // Tinybird default JSON response: { "meta": [...], "data": [...], "rows": N, ... }
+            
+            // data.data is an array of objects
+            const labels = rows.map(r => r.date);
+            
+            // Convert grams to kcal
+            // Carbs: 4 kcal/g, Protein: 4 kcal/g, Fat: 9 kcal/g
+            const carbsData = rows.map(r => r.carbs * 4);
+            const proteinData = rows.map(r => r.protein * 4);
+            const fatData = rows.map(r => r.fat * 9);
+
+            const ctx = document.getElementById('caloriesChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Carbs (kcal)',
+                            data: carbsData,
+                            backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                            stack: 'Stack 0',
+                        },
+                        {
+                            label: 'Protein (kcal)',
+                            data: proteinData,
+                            backgroundColor: 'rgba(75, 192, 192, 0.7)',
+                            stack: 'Stack 0',
+                        },
+                        {
+                            label: 'Fat (kcal)',
+                            data: fatData,
+                            backgroundColor: 'rgba(255, 99, 132, 0.7)',
+                            stack: 'Stack 0',
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { stacked: true },
+                        y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Calories' } }
+                    }
+                }
+            });
+        }
+
+        // Tab Switching
+        function switchTab(tab) {
+            const chatBtn = document.getElementById('tab-chat');
+            const sqlBtn = document.getElementById('tab-sql');
+            const chatContent = document.getElementById('content-chat');
+            const sqlContent = document.getElementById('content-sql');
+
+            if (tab === 'chat') {
+                chatBtn.classList.add('text-blue-600', 'border-b-2', 'border-blue-600');
+                chatBtn.classList.remove('text-gray-500');
+                sqlBtn.classList.remove('text-blue-600', 'border-b-2', 'border-blue-600');
+                sqlBtn.classList.add('text-gray-500');
+                
+                chatContent.classList.remove('hidden');
+                sqlContent.classList.add('hidden');
+            } else {
+                sqlBtn.classList.add('text-blue-600', 'border-b-2', 'border-blue-600');
+                sqlBtn.classList.remove('text-gray-500');
+                chatBtn.classList.remove('text-blue-600', 'border-b-2', 'border-blue-600');
+                chatBtn.classList.add('text-gray-500');
+                
+                sqlContent.classList.remove('hidden');
+                chatContent.classList.add('hidden');
+            }
+        }
+
+        function handleEnter(e, type) {
+            if (e.key === 'Enter') {
+                if (type === 'chat') sendChat();
+            }
+        }
+
+        // Chat Functionality
+        async function sendChat() {
+            const input = document.getElementById('chat-input');
+            const query = input.value.trim();
+            if (!query) return;
+
+            document.getElementById('chat-loading').classList.remove('hidden');
+            document.getElementById('chat-result').classList.add('hidden');
+
+            try {
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query })
+                });
+                const data = await res.json();
+                
+                document.getElementById('chat-loading').classList.add('hidden');
+                document.getElementById('chat-result').classList.remove('hidden');
+                
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+
+                document.getElementById('chat-sql-output').textContent = data.sql;
+                renderTable('chat-table', data.result);
+                
+            } catch (e) {
+                console.error(e);
+                alert('Request failed');
+                document.getElementById('chat-loading').classList.add('hidden');
+            }
+        }
+
+        // SQL Functionality
+        async function runSQL() {
+            const input = document.getElementById('sql-input');
+            const query = input.value.trim();
+            if (!query) return;
+
+            document.getElementById('sql-loading').classList.remove('hidden');
+            document.getElementById('sql-result').classList.add('hidden');
+            document.getElementById('sql-error').classList.add('hidden');
+
+            try {
+                const res = await fetch('/api/sql', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query })
+                });
+                const data = await res.json();
+                
+                document.getElementById('sql-loading').classList.add('hidden');
+                if (data.error) {
+                    const errDiv = document.getElementById('sql-error');
+                    errDiv.textContent = data.error;
+                    errDiv.classList.remove('hidden');
+                    return;
+                }
+                
+                document.getElementById('sql-result').classList.remove('hidden');
+                renderTable('sql-table', data);
+
+            } catch (e) {
+                console.error(e);
+                alert('Request failed');
+                document.getElementById('sql-loading').classList.add('hidden');
+            }
+        }
+
+        // Generic Table Renderer
+        function renderTable(tableId, data) {
+            const table = document.getElementById(tableId);
+            table.innerHTML = ''; // Clear
+
+            if (!data || !data.meta || !data.data || data.data.length === 0) {
+                table.innerHTML = '<tr><td class="p-4 text-gray-500">No results found</td></tr>';
+                return;
+            }
+
+            // Header
+            const thead = document.createElement('thead');
+            thead.className = 'bg-gray-50';
+            const headerRow = document.createElement('tr');
+            data.meta.forEach(col => {
+                const th = document.createElement('th');
+                th.className = 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider';
+                th.textContent = col.name;
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            // Body
+            const tbody = document.createElement('tbody');
+            tbody.className = 'bg-white divide-y divide-gray-200';
+            data.data.forEach(row => {
+                const tr = document.createElement('tr');
+                // Tinybird data is usually array of objects mapping field->value for JSON format
+                // row is { "day": "...", "amount": ... }
+                data.meta.forEach(col => {
+                    const td = document.createElement('td');
+                    td.className = 'px-6 py-4 whitespace-nowrap text-sm text-gray-900';
+                    td.textContent = row[col.name];
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+            table.appendChild(tbody);
+        }
+    </script>
+</body>
+</html>

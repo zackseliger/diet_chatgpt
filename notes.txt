@@ -1,0 +1,18 @@
+Show me the top 5 days with highest protein intake
+
+SELECT day, sum(protein_g) AS total_protein_g FROM servings_apr_25 GROUP BY day ORDER BY total_protein_g DESC LIMIT 5
+
+Which day did I eat the most sugar, and how much?
+
+SELECT 
+		day, 
+		sum(coalesce(sugars_g, 0)) as total_sugar
+FROM servings_apr_25
+GROUP BY day
+ORDER BY total_sugar DESC
+LIMIT 1
+
+
+
+
+Error: Error code: 400 - {'error': {'message': "Invalid type for 'input[2].output': expected one of a string or array of objects, but got an object instead.", 'type': 'invalid_request_error', 'param': 'input[2].output', 'code': 'invalid_type'}}
