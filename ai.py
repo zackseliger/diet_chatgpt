@@ -88,24 +88,38 @@ COMMA: ","
 GT: ">"
 EQ: "="
 SEMI: ";"
+LPAR: "("
+RPAR: ")"
 
 // ---------- Start ----------
-start: "SELECT" SP select_list SP "FROM" SP "servings_apr_25" SP "WHERE" SP amount_filter SP "AND" SP date_filter SP "ORDER" SP "BY" SP sort_cols SP "LIMIT" SP NUMBER SEMI
+start: select_clause SP "FROM" SP "servings_apr_25" [where_clause] [group_clause] [sort_clause] [limit_clause] SEMI
 
-// ---------- Projections ----------
-select_list: column (COMMA SP column)*
+// ---------- Clauses ----------
+select_clause: SP "SELECT" SP expression (COMMA SP expression)*
+where_clause: SP "WHERE" SP conditions
+group_clause: SP "GROUP BY" SP column
+sort_clause: SP "ORDER BY" SP expression SP direction
+limit_clause: SP "LIMIT" SP NUMBER
+
+// ---------- Expressions ----------
+aggregation: AGG_FUNC LPAR column RPAR
 column: IDENTIFIER
+expression: column | aggregation
+
 
 // ---------- Filters ----------
-amount_filter: "total_amount" SP GT SP NUMBER
-date_filter: "order_date" SP GT SP DATE
+conditions: condition (SP logic_op SP condition)*
+condition: IDENTIFIER SP COMPARISON_OPS SP VALUE
+logic_op: "AND" | "OR"
+direction: "ASC" | "DESC"
 
-// ---------- Sorting ----------
-sort_cols: "order_date" SP "DESC"
-
-// ---------- Terminals ----------
+// ---------- Regex Matches ----------
+AGG_FUNC: "SUM" | "AVG" | "COUNT" | "MAX" | "MIN"
+COMPARISON_OPS: /(<=|>=|!=|=|<|>)/
 IDENTIFIER: /[A-Za-z_][A-Za-z0-9_]*/
+STRING: /'[^']*'/
 NUMBER: /[0-9]+/
+VALUE: STRING | NUMBER
 DATE: /'[0-9]{4}-[0-9]{2}-[0-9]{2}'/
 """
 
@@ -122,7 +136,7 @@ TOOLS = [
     }
 ]
 
-def get_completion(query):
+def get_completion_stream(query):
     previous_response_id = None
 
     input_items = [
@@ -146,8 +160,13 @@ def get_completion(query):
         response_item = response.output[1] if len(response.output) > 1 else None
 
         if response_item and response_item.type == "custom_tool_call" and response_item.name == "query_db":
-            print(f"calling DB with query: {response_item.input}")
-            tool_call_result = query_tinybird(response_item.input)
+            sql_query = response_item.input
+            print(f"calling DB with query: {sql_query}")
+            
+            # Yield the query event so the frontend can display it
+            yield {"type": "query", "data": sql_query}
+            
+            tool_call_result = query_tinybird(sql_query)
 
             input_items.append(
                 {
@@ -157,8 +176,11 @@ def get_completion(query):
                 }
             )
         elif response_item: # no tool calls
-            print(response_item)
-            return response_item.content[0].text
+            final_text = response_item.content[0].text
+            
+            # Yield the final result
+            yield {"type": "result", "data": final_text}
+            return
         else:
             raise RuntimeError(f"unexpected response, output length is {len(response)}. Output: {response}")
 

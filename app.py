@@ -1,6 +1,6 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, Response, stream_with_context
 import json
-from ai import get_completion
+from ai import get_completion_stream
 from utils import query_tinybird
 
 app = Flask(__name__)
@@ -43,17 +43,18 @@ def run_sql():
 def chat():
     user_query = request.json.get('query')
 
-    # Using response_format for specific structure (CFG-like behavior)
-    try:
-        content = get_completion(user_query)
+    def generate():
+        """Generator function to stream Server-Sent Events"""
+        try:
+            for event in get_completion_stream(user_query):
+                # Format as SSE: data: {json}\n\n
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as e:
+            # Send error event
+            yield f"data: {json.dumps({'type': 'error', 'data': str(e)})}\n\n"
 
-        return jsonify({
-            "sql": "N/A",
-            "result": content
-        })
-        
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    return Response(stream_with_context(generate()), 
+                   mimetype='text/event-stream')
 
 if __name__ == '__main__':
     app.run(debug=True, port=8000)

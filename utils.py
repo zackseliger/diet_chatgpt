@@ -11,6 +11,7 @@ def query_tinybird(sql_query: str):
     url = f"{TINYBIRD_URL}/v0/sql"
     # Ensure we get JSON
     if "FORMAT JSON" not in sql_query.upper():
+        sql_query = sql_query.replace(';', '')
         sql_query += " FORMAT JSON"
 
     params = {
