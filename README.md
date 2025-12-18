@@ -21,8 +21,11 @@ Simply run app.py `python3 app.py`, and it will run on the local machine on port
 
 It's also hosted on http://137.184.35.207/
 
-## Limitations
-The context-free grammar in @ai.py is not a complete SQL implementation. The most obvious limitations are:
+## Context-Free Grammar
+All interactions with ChatGPT are in @ai.py, including the context-free grammar
+
+### Limitations
+The context-free grammar is not a complete SQL implementation. The most obvious limitations are:
 - Numbers cannot have a decimal "."
 - No nested queries. So queries like "SELECT * FROM (SELECT ...)" aren't supported
 
