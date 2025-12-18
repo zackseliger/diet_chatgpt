@@ -37,7 +37,4 @@ Ask the AI any natural-language question and get a response. It will show the to
 Query the database yourself. Output is in table format
 
 ### Evals
-Evaluation questions. They are:
-- Which day was the most sugar eaten, and how much? Round to the nearest integer. Output in the format "DATE AMOUNT", for example: "2021-03-15 99g"
-- What was the most Vitamin C consumed in one serving? What food item was it, and how much Vitamin C? Round to the nearest integer. Just output the food name, not the cooking method. Format the answer like this: "FOOD AMOUNT", for example: "Sweet Potato 57mg"
-- What was the top 3 amounts of calories consumed per day? Output a comma-separated list of calories in descending order, rounding the calorie amounts to the nearest integer. Example: "6000, 5000, 4000"
+Evaluation questions. You can run them individually or all in a row by clicking "Run All Evals". It will count which ones passed and failed
