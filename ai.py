@@ -85,8 +85,6 @@ GRAMMAR_DEFINITION = r"""
 // ---------- Punctuation & operators ----------
 SP: " "
 COMMA: ","
-GT: ">"
-EQ: "="
 SEMI: ";"
 LPAR: "("
 RPAR: ")"
@@ -102,9 +100,10 @@ sort_clause: SP "ORDER BY" SP expression SP direction
 limit_clause: SP "LIMIT" SP NUMBER
 
 // ---------- Expressions ----------
-aggregation: AGG_FUNC LPAR column RPAR
+aggregation: AGG_FUNC LPAR column RPAR [alias]
 column: IDENTIFIER
 expression: column | aggregation
+alias: SP "AS" SP IDENTIFIER
 
 
 // ---------- Filters ----------
@@ -113,7 +112,7 @@ condition: IDENTIFIER SP COMPARISON_OPS SP VALUE
 logic_op: "AND" | "OR"
 direction: "ASC" | "DESC"
 
-// ---------- Regex Matches ----------
+// ---------- Terminals ----------
 AGG_FUNC: "SUM" | "AVG" | "COUNT" | "MAX" | "MIN"
 COMPARISON_OPS: /(<=|>=|!=|=|<|>)/
 IDENTIFIER: /[A-Za-z_][A-Za-z0-9_]*/

@@ -33,12 +33,15 @@
                 <button onclick="switchTab('sql')" id="tab-sql" class="flex-1 py-4 px-6 text-center font-medium text-gray-500 hover:text-gray-700 focus:outline-none">
                     Manual SQL
                 </button>
+                <button onclick="switchTab('evals')" id="tab-evals" class="flex-1 py-4 px-6 text-center font-medium text-gray-500 hover:text-gray-700 focus:outline-none">
+                    Evals
+                </button>
             </div>
 
             <!-- Chat Tab Content -->
             <div id="content-chat" class="space-y-4">
                 <div class="bg-blue-50 p-4 rounded-md text-sm text-blue-800 mb-4">
-                    <p>Ask natural language questions about your diet data. Uses GPT-4o with structured output schema.</p>
+                    <p>Ask natural language questions about your diet data</p>
                     <p class="font-mono mt-1 text-xs">Example: "Show me the top 5 days with highest protein intake"</p>
                 </div>
                 
@@ -99,6 +102,31 @@
                  <div id="sql-error" class="hidden p-4 text-red-600 bg-red-50 rounded border border-red-200"></div>
 
             </div>
+
+            <!-- Evals Tab Content -->
+            <div id="content-evals" class="space-y-4 hidden">
+                <div class="bg-purple-50 p-4 rounded-md text-sm text-purple-800 mb-4">
+                    <p>Test AI responses against expected answers. Click "Run" to evaluate each question or "Run All" to test all at once.</p>
+                </div>
+
+                <div class="flex justify-end mb-4">
+                    <button onclick="runAllEvals()" id="run-all-btn" class="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 font-medium transition-colors">
+                        Run All Evals
+                    </button>
+                </div>
+
+                <div id="evals-summary" class="hidden bg-gray-100 p-4 rounded-lg mb-4">
+                    <div class="flex items-center gap-4">
+                        <span class="font-semibold text-gray-700">Results:</span>
+                        <span id="evals-passed" class="text-green-600 font-medium">0 passed</span>
+                        <span id="evals-failed" class="text-red-600 font-medium">0 failed</span>
+                    </div>
+                </div>
+
+                <div id="evals-container" class="space-y-4">
+                    <!-- Eval items will be rendered here -->
+                </div>
+            </div>
         </div>
     </div>
 
@@ -121,10 +149,6 @@
         }
 
         function renderChart(rows, meta) {
-            // Tinybird JSON format usually: { meta: [...], data: [{key: val}, ...] } or data: [[val, val]] depending on format.
-            // Using query_tinybird implementation which appends FORMAT JSON.
-            // Tinybird default JSON response: { "meta": [...], "data": [...], "rows": N, ... }
-            
             // data.data is an array of objects
             const labels = rows.map(r => r.date);
             
@@ -173,27 +197,33 @@
 
         // Tab Switching
         function switchTab(tab) {
-            const chatBtn = document.getElementById('tab-chat');
-            const sqlBtn = document.getElementById('tab-sql');
-            const chatContent = document.getElementById('content-chat');
-            const sqlContent = document.getElementById('content-sql');
+            const tabs = ['chat', 'sql', 'evals'];
+            const buttons = {
+                chat: document.getElementById('tab-chat'),
+                sql: document.getElementById('tab-sql'),
+                evals: document.getElementById('tab-evals')
+            };
+            const contents = {
+                chat: document.getElementById('content-chat'),
+                sql: document.getElementById('content-sql'),
+                evals: document.getElementById('content-evals')
+            };
 
-            if (tab === 'chat') {
-                chatBtn.classList.add('text-blue-600', 'border-b-2', 'border-blue-600');
-                chatBtn.classList.remove('text-gray-500');
-                sqlBtn.classList.remove('text-blue-600', 'border-b-2', 'border-blue-600');
-                sqlBtn.classList.add('text-gray-500');
-                
-                chatContent.classList.remove('hidden');
-                sqlContent.classList.add('hidden');
-            } else {
-                sqlBtn.classList.add('text-blue-600', 'border-b-2', 'border-blue-600');
-                sqlBtn.classList.remove('text-gray-500');
-                chatBtn.classList.remove('text-blue-600', 'border-b-2', 'border-blue-600');
-                chatBtn.classList.add('text-gray-500');
-                
-                sqlContent.classList.remove('hidden');
-                chatContent.classList.add('hidden');
+            // Reset all tabs
+            tabs.forEach(t => {
+                buttons[t].classList.remove('text-blue-600', 'border-b-2', 'border-blue-600');
+                buttons[t].classList.add('text-gray-500');
+                contents[t].classList.add('hidden');
+            });
+
+            // Activate selected tab
+            buttons[tab].classList.add('text-blue-600', 'border-b-2', 'border-blue-600');
+            buttons[tab].classList.remove('text-gray-500');
+            contents[tab].classList.remove('hidden');
+
+            // Render evals when switching to evals tab
+            if (tab === 'evals') {
+                renderEvals();
             }
         }
 
@@ -389,6 +419,198 @@
                 tbody.appendChild(tr);
             });
             table.appendChild(tbody);
+        }
+
+        // Pre-filled evaluation questions and expected answers
+        const evalQuestions = [
+            {
+                id: 1,
+                question: 'Which day was the most sugar eaten, and how much? Round to the nearest integer. Output in the format "DATE AMOUNT", for example: "2021-03-15 99g"',
+                expectedAnswer: '2023-10-06 195g'
+            },
+            {
+                id: 2,
+                question: 'What was the most Vitamin C consumed in one serving? What food item was it, and how much Vitamin C? Round to the nearest integer. Just output the food name, not the cooking method. Format the answer like this: "FOOD AMOUNT", for example: "Sweet Potato 57mg"',
+                expectedAnswer: 'Broccoli 294mg'
+            },
+            {
+                id: 3,
+                question: 'What was the top 3 amounts of calories consumed per day? Output a comma-separated list of calories in descending order, rounding the calorie amounts to the nearest integer. Example: "6000, 5000, 4000"',
+                expectedAnswer: '4389, 4082, 3738'
+            }
+        ];
+
+        // Track eval results
+        let evalResults = {};
+
+        function renderEvals() {
+            const container = document.getElementById('evals-container');
+            
+            // Only render if empty (avoid re-rendering and losing state)
+            if (container.children.length > 0) return;
+
+            evalQuestions.forEach((evalItem, index) => {
+                const evalDiv = document.createElement('div');
+                evalDiv.className = 'bg-white border border-gray-200 rounded-lg p-4 shadow-sm';
+                evalDiv.id = `eval-item-${evalItem.id}`;
+
+                evalDiv.innerHTML = `
+                    <div class="flex items-start justify-between gap-4">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="text-xs font-semibold bg-purple-100 text-purple-800 px-2 py-1 rounded">Eval #${evalItem.id}</span>
+                                <span id="eval-status-${evalItem.id}" class="text-2xl"></span>
+                            </div>
+                            <p class="text-sm text-gray-700 mb-3">${evalItem.question}</p>
+                            <div class="bg-gray-50 p-3 rounded mb-3">
+                                <span class="text-xs font-semibold text-gray-500 uppercase">Expected Answer:</span>
+                                <p class="text-sm font-mono text-gray-800 mt-1">${evalItem.expectedAnswer}</p>
+                            </div>
+                            <div id="eval-result-${evalItem.id}" class="hidden">
+                                <div class="bg-blue-50 p-3 rounded">
+                                    <span class="text-xs font-semibold text-blue-600 uppercase">AI Response:</span>
+                                    <p id="eval-response-${evalItem.id}" class="text-sm font-mono text-gray-800 mt-1"></p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex flex-col items-center gap-2">
+                            <button onclick="runEval(${evalItem.id})" id="eval-run-btn-${evalItem.id}" class="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 font-medium transition-colors text-sm">
+                                Run
+                            </button>
+                            <div id="eval-loading-${evalItem.id}" class="hidden">
+                                <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600"></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                container.appendChild(evalDiv);
+            });
+        }
+
+        async function runEval(evalId) {
+            const evalItem = evalQuestions.find(e => e.id === evalId);
+            if (!evalItem) return;
+
+            // Show loading, hide button
+            document.getElementById(`eval-loading-${evalId}`).classList.remove('hidden');
+            document.getElementById(`eval-run-btn-${evalId}`).classList.add('hidden');
+            document.getElementById(`eval-status-${evalId}`).textContent = '';
+            document.getElementById(`eval-result-${evalId}`).classList.add('hidden');
+
+            try {
+                const aiResponse = await sendEvalQuery(evalItem.question);
+                
+                // Show result
+                document.getElementById(`eval-result-${evalId}`).classList.remove('hidden');
+                document.getElementById(`eval-response-${evalId}`).textContent = aiResponse;
+
+                // Check if answer matches (exact match)
+                const isCorrect = aiResponse.trim() === evalItem.expectedAnswer.trim();
+                
+                // Update status icon
+                const statusEl = document.getElementById(`eval-status-${evalId}`);
+                if (isCorrect) {
+                    statusEl.innerHTML = '<span class="text-green-600">✓</span>';
+                    evalResults[evalId] = true;
+                } else {
+                    statusEl.innerHTML = '<span class="text-red-600">✗</span>';
+                    evalResults[evalId] = false;
+                }
+
+                updateEvalsSummary();
+
+            } catch (e) {
+                console.error('Eval failed:', e);
+                document.getElementById(`eval-status-${evalId}`).innerHTML = '<span class="text-red-600">⚠</span>';
+                evalResults[evalId] = false;
+            } finally {
+                // Hide loading, show button
+                document.getElementById(`eval-loading-${evalId}`).classList.add('hidden');
+                document.getElementById(`eval-run-btn-${evalId}`).classList.remove('hidden');
+            }
+        }
+
+        async function sendEvalQuery(question) {
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: question })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let result = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                
+                if (done) break;
+                
+                buffer += decoder.decode(value, { stream: true });
+                
+                // Process complete SSE messages
+                const lines = buffer.split('\n\n');
+                buffer = lines.pop();
+                
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const jsonStr = line.substring(6);
+                        try {
+                            const event = JSON.parse(jsonStr);
+                            if (event.type === 'result') {
+                                result = event.data;
+                            } else if (event.type === 'error') {
+                                throw new Error(event.data);
+                            }
+                        } catch (e) {
+                            if (e.message !== 'Unexpected end of JSON input') {
+                                console.error('Failed to parse event:', e);
+                            }
+                        }
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        async function runAllEvals() {
+            // Disable run all button
+            const runAllBtn = document.getElementById('run-all-btn');
+            runAllBtn.disabled = true;
+            runAllBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            runAllBtn.textContent = 'Running...';
+
+            // Reset results
+            evalResults = {};
+
+            // Run each eval sequentially
+            for (const evalItem of evalQuestions) {
+                await runEval(evalItem.id);
+            }
+
+            // Re-enable button
+            runAllBtn.disabled = false;
+            runAllBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            runAllBtn.textContent = 'Run All Evals';
+        }
+
+        function updateEvalsSummary() {
+            const summaryDiv = document.getElementById('evals-summary');
+            const passedCount = Object.values(evalResults).filter(r => r === true).length;
+            const failedCount = Object.values(evalResults).filter(r => r === false).length;
+
+            if (passedCount > 0 || failedCount > 0) {
+                summaryDiv.classList.remove('hidden');
+                document.getElementById('evals-passed').textContent = `${passedCount} passed`;
+                document.getElementById('evals-failed').textContent = `${failedCount} failed`;
+            }
         }
     </script>
 </body>
