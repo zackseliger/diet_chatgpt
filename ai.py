@@ -155,8 +155,8 @@ def get_completion_stream(query):
             parallel_tool_calls=False,
         )
 
-        # element 0 is reasoning, 1 is tool call (if any)
-        response_item = response.output[1] if len(response.output) > 1 else None
+        # element 0 is reasoning (if any), last is the real response
+        response_item = response.output[-1]
 
         if response_item and response_item.type == "custom_tool_call" and response_item.name == "query_db":
             sql_query = response_item.input
